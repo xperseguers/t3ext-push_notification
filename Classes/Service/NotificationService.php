@@ -14,6 +14,8 @@
 
 namespace Causal\PushNotification\Service;
 
+use TYPO3\CMS\Core\Utility\GeneralUtility;
+
 /**
  * Notification service.
  *
@@ -24,8 +26,26 @@ namespace Causal\PushNotification\Service;
  * @copyright   Causal Sàrl
  * @license     http://www.gnu.org/copyleft/gpl.html
  */
-class NotificationService extends \TYPO3\CMS\Core\SingletonInterface
+class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 {
+
+    private $extKey = 'push_notification';
+
+    /**
+     * Returns a singleton of this class.
+     *
+     * @return NotificationService
+     */
+    public static function getInstance()
+    {
+        static $instance = null;
+
+        if ($instance === null) {
+            $instance = GeneralUtility::makeInstance(__CLASS__);
+        }
+
+        return $instance;
+    }
 
     /**
      * Notifies a given user on all their registered devices.
@@ -40,18 +60,16 @@ class NotificationService extends \TYPO3\CMS\Core\SingletonInterface
      */
     public function notify ($notificationId, $userId, $message, $sound = 'default', $badge = 0, $production = true)
     {
-        $database = $this->getDatabaseConnection();
-
-        $tokens = $database->exec_SELECTgetRows('token', 'tx_pushnotification_tokens', 'user_id=' . (int)$userId);
-        if (empty($tokens)) {
+        $rows = $this->getDatabaseConnection()->exec_SELECTgetRows('token', 'tx_pushnotification_tokens', 'user_id=' . (int)$userId);
+        if (empty($rows)) {
             // No need to notify
             return -1;
         }
 
         $count = 0;
-        foreach ($tokens as $token) {
+        foreach ($rows as $row) {
             // Normalize the token
-            $token = str_replace(' ', '', $token);
+            $token = str_replace(' ', '', $row['token']);
             if (strlen($token) === 64) {
                 // iOS
                 if ($this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $production)) {
@@ -138,9 +156,15 @@ class NotificationService extends \TYPO3\CMS\Core\SingletonInterface
         }
 
         // Create a stream
+        $certificate = $this->getiOSCertificateFileName();
+        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
         $ctx = stream_context_create();
-        stream_context_set_option($ctx, 'ssl', 'local_cert', $this->getCertificateFileName());
-        stream_context_set_option($ctx, 'ssl', 'passphrase', $this->getCertificatePassPhrase());
+        if (!empty($certificate) && is_readable($certificate)) {
+            stream_context_set_option($ctx, 'ssl', 'local_cert', $certificate);
+        }
+        if (!empty($certificatePassPhrase)) {
+            stream_context_set_option($ctx, 'ssl', 'passphrase', $certificatePassPhrase);
+        }
 
         // Open a connection to the APNS server
         $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
@@ -164,33 +188,42 @@ class NotificationService extends \TYPO3\CMS\Core\SingletonInterface
     /**
      * Returns the name of the .pem certificate (containing private + public keys) to use.
      *
-     * @return string
+     * @return string|null
      */
-    protected function getCertificateFileName()
+    protected function getiOSCertificateFileName()
     {
-        static $certificateFileName = null;
-
-        if ($certificateFileName === null) {
-            // TODO
-        }
-
-        return $certificateFileName;
+        $settings = $this->getSettings();
+        return isset($settings['iOS_certificate']) ? $settings['iOS_certificate'] : null;
     }
 
     /**
      * Returns the pass phrase to use to open the certificate.
      *
-     * @return string
+     * @return string|null
      */
-    protected function getCertificatePassPhrase()
+    protected function getiOSCertificatePassPhrase()
     {
-        static $certificatePassPhrase = null;
+        $settings = $this->getSettings();
+        return isset($settings['iOS_certificate_passphrase']) ? $settings['iOS_certificate_passphrase'] : null;
+    }
 
-        if ($certificatePassPhrase === null) {
-            // TODO
+    /**
+     * Returns the global settings.
+     *
+     * @return array
+     */
+    protected function getSettings()
+    {
+        static $settings = null;
+
+        if ($settings === null) {
+            $settings = unserialize($GLOBALS['TYPO3_CONF_VARS']['EXT']['extConf'][$this->extKey]);
+            if (!is_array($settings)) {
+                $settings = [];
+            }
         }
 
-        return $certificatePassPhrase;
+        return $settings;
     }
 
     /**

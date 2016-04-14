@@ -1,0 +1,4 @@
+# cat=basic/file/1; type=file[pem]; label=Apple Push Notification Service Certificate: Absolute path to the certificate file.
+iOS_certificate =
+# cat=basic/file/2; type=string; label=Certificate Pass Phrase: Pass phrase to load the certificate.
+iOS_certificate_passphrase =
