@@ -97,6 +97,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @return bool
      */
     protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate, $production) {
+        $certificate = $this->getiOSCertificateFileName();
+        if (empty($certificate) || !is_readable($certificate)) {
+            return false;
+        }
+
+        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
+
         $payload = json_encode([
             'aps' => [
                 'alert' => $message,
@@ -156,12 +163,8 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
 
         // Create a stream
-        $certificate = $this->getiOSCertificateFileName();
-        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
         $ctx = stream_context_create();
-        if (!empty($certificate) && is_readable($certificate)) {
-            stream_context_set_option($ctx, 'ssl', 'local_cert', $certificate);
-        }
+        stream_context_set_option($ctx, 'ssl', 'local_cert', $certificate);
         if (!empty($certificatePassPhrase)) {
             stream_context_set_option($ctx, 'ssl', 'passphrase', $certificatePassPhrase);
         }
