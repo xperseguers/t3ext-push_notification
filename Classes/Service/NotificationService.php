@@ -95,11 +95,12 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @param bool $immediate
      * @param bool $production
      * @return bool
+     * @throws \RuntimeException
      */
     protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate, $production) {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
-            return false;
+            throw new \RuntimeException('Certificate is either empty or not readable (check open_basedir)', 1461613078);
         }
 
         $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
@@ -173,10 +174,10 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
         if (!$fp) {
             // Fail to connect
-            return false;
+            throws new \RuntimeException('Could not connect to ' . $gateway, 1461613128);
         }
 
-        // Esnure that blocking is disabled
+        // Ensure that blocking is disabled
         stream_set_blocking($fp, 0);
 
         // Send it to the server
