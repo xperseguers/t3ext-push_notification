@@ -2,3 +2,6 @@
 iOS_certificate =
 # cat=basic/file/2; type=string; label=Certificate Pass Phrase: Pass phrase to load the certificate.
 iOS_certificate_passphrase =
+
+# cat=basic//; type=string; label=GCM API key: API key to send notifications using GCM.
+gcm_access_key =

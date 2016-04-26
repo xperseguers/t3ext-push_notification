@@ -14,6 +14,9 @@
 
 namespace Causal\PushNotification\Service;
 
+use Causal\PushNotification\Exception\InvalidApiKeyException;
+use Causal\PushNotification\Exception\InvalidCertificateException;
+use Causal\PushNotification\Exception\InvalidGatewayException;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -30,6 +33,16 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 {
 
     private $extKey = 'push_notification';
+
+    /**
+     * @var string
+     */
+    protected $largeIcon = '';
+
+    /**
+     * @var string
+     */
+    protected $smallIcon = '';
 
     /**
      * Returns a singleton of this class.
@@ -67,21 +80,71 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
 
         $count = 0;
+        $googleDeviceTokens = [];
+
         foreach ($rows as $row) {
             // Normalize the token
             $token = str_replace(' ', '', $row['token']);
             if (strlen($token) === 64) {
                 // iOS
-                if ($this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $production)) {
-                    $count++;
-                }
+                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $production);
             } else {
                 // Android
-                // TODO
+                $googleDeviceTokens[] = $token;
             }
         }
 
+        // GCM lets us send a message to multiple devices at once
+        $title = 'LionsBase';
+        $subtitle = 'Reminder';
+        $tickerText = 'Bla bla bla';
+        $count += $this->notifyGCM($googleDeviceTokens, $message, $title, $subtitle, $tickerText, $sound, $sound);
+
         return $count;
+    }
+
+    /**
+     * Returns the large icon (GCM).
+     *
+     * @return string
+     */
+    public function getLargeIcon()
+    {
+        return $this->largeIcon;
+    }
+
+    /**
+     * Sets the large icon (GCM).
+     *
+     * @param string $largeIcon
+     * @return $this
+     */
+    public function setLargeIcon($largeIcon)
+    {
+        $this->largeIcon = $largeIcon;
+        return $this;
+    }
+
+    /**
+     * Returns the small icon (GCM).
+     *
+     * @return string
+     */
+    public function getSmallIcon()
+    {
+        return $this->smallIcon;
+    }
+
+    /**
+     * Sets the small icon (GCM).
+     *
+     * @param string $smallIcon
+     * @return $this
+     */
+    public function setSmallIcon($smallIcon)
+    {
+        $this->smallIcon = $smallIcon;
+        return $this;
     }
 
     /**
@@ -94,13 +157,14 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @param string $badge
      * @param bool $immediate
      * @param bool $production
-     * @return bool
-     * @throws \RuntimeException
+     * @return int Nunber of notification sent (1 if success, otherwise 0)
+     * @throws InvalidCertificateException
+     * @throws InvalidGatewayException
      */
     protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate, $production) {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
-            throw new \RuntimeException('Certificate is either empty or not readable (check open_basedir)', 1461613078);
+            throw new InvalidCertificateException();
         }
 
         $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
@@ -174,7 +238,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
         if (!$fp) {
             // Fail to connect
-            throws new \RuntimeException('Could not connect to ' . $gateway, 1461613128);
+            throw new InvalidGatewayException($gateway);
         }
 
         // Ensure that blocking is disabled
@@ -186,7 +250,77 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         // Close the connection to the server
         fclose($fp);
 
-        return (bool)$result;
+        return (bool)$result ? 1 : 0;
+    }
+
+    /**
+     * Sends a notification using GCM.
+     *
+     * @param array|string $deviceTokens
+     * @param string $message
+     * @param string $title
+     * @param string $subtitle
+     * @param string $tickerText
+     * @param bool $sound
+     * @param bool $vibrate
+     * @return int Number of notification sent
+     * @throws InvalidGatewayException
+     * @throws InvalidApiKeyException
+     */
+    protected function notifyGCM($deviceTokens, $message, $title, $subtitle, $tickerText, $sound, $vibrate)
+    {
+        if (!is_array($deviceTokens)) {
+            $deviceTokens = [$deviceTokens];
+        }
+
+        $apiAccessKey = $this->getGCMAccessKey();
+        if (strlen($apiAccessKey) < 8) {
+            throw new InvalidApiKeyException();
+        }
+
+        $gateway = 'https://android.googleapis.com/gcm/send';
+
+        $payload = json_encode([
+            'registration_ids' => $deviceTokens,
+            'data' => [
+                'message' => $message,
+                'title' => $title,
+                'subtitle' => $subtitle,
+                'tickerText' => $tickerText,
+                'vibrate' => $vibrate ? 1 : 0,
+                'sound' => $sound ? 1 : 0,
+                'largeIcon' => $this->largeIcon,
+                'smallIcon' => $this->smallIcon,
+            ]
+        ]);
+
+        // Create a stream
+        $options = [
+            'method' => 'POST',
+            'header' => [
+                'Authorization: key=' . $apiAccessKey,
+                'Content-Type: application/json',
+            ]
+        ];
+        $ctx = stream_context_create($options);
+
+        // Open a connection to the GCM server
+        $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
+        if (!$fp) {
+            // Fail to connect
+            throw new InvalidGatewayException($gateway);
+        }
+
+        // Ensure that blocking is disabled
+        stream_set_blocking($fp, 0);
+
+        // Send it to the server
+        $result = fwrite($fp, $payload, strlen($payload));
+
+        // Close the connection to the server
+        fclose($fp);
+
+        return (bool)$result ? count($deviceTokens) : 0;
     }
 
     /**
@@ -209,6 +343,17 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     {
         $settings = $this->getSettings();
         return isset($settings['iOS_certificate_passphrase']) ? $settings['iOS_certificate_passphrase'] : null;
+    }
+
+    /**
+     * Returns the GCM access key.
+     *
+     * @return string|null
+     */
+    protected function getGCMAccessKey()
+    {
+        $settings = $this->getSettings();
+        return isset($settings['gcm_access_key']) ? $settings['gcm_access_key'] : null;
     }
 
     /**
