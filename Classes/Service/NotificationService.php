@@ -294,32 +294,26 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             ]
         ]);
 
-        // Create a stream
-        $options = [
-            'method' => 'POST',
-            'header' => [
-                'Authorization: key=' . $apiAccessKey,
-                'Content-Type: application/json',
-            ]
+        $headers = [
+            'Authorization: key=' . $apiAccessKey,
+            'Content-Type: application/json',
         ];
-        $ctx = stream_context_create($options);
 
-        // Open a connection to the GCM server
-        $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
-        if (!$fp) {
-            // Fail to connect
-            throw new InvalidGatewayException($gateway);
-        }
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $gateway);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
 
-        // Ensure that blocking is disabled
-        stream_set_blocking($fp, 0);
-
-        // Send it to the server
-        $result = fwrite($fp, $payload, strlen($payload));
+        // Execute the request
+        $result = curl_exec($ch);
 
         // Close the connection to the server
-        fclose($fp);
+        curl_close($ch);
 
+        // TODO: Check result!
         return (bool)$result ? count($deviceTokens) : 0;
     }
 
