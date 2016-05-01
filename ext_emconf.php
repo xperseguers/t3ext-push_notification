@@ -1,25 +1,19 @@
 <?php
 
-/***************************************************************
- * Extension Manager/Repository config file for ext "push_notification".
- *
- * Auto generated 04-04-2016 12:43
- *
- * Manual updates:
- * Only the data in the array - everything else is removed by next
- * writing. "version" and "dependencies" must not be touched!
- ***************************************************************/
+// ---------------------------------------------------------------------
+// Extension Manager/Repository config file for ext: "push_notification"
+// ---------------------------------------------------------------------
 
-$EM_CONF[$_EXTKEY] = array(
+$EM_CONF[$_EXTKEY] = [
     'title' => 'Push Notification Service for iOS and Android',
     'description' => 'Service to let extension developer send notifications to iOS and Android devices.',
     'category' => 'services',
     'shy' => 0,
-    'version' => '0.0.1',
+    'version' => '0.1.0',
     'priority' => '',
     'loadOrder' => '',
     'module' => '',
-    'state' => 'alpha',
+    'state' => 'beta',
     'uploadfolder' => 0,
     'createDirs' => '',
     'modify_tables' => '',
@@ -29,13 +23,13 @@ $EM_CONF[$_EXTKEY] = array(
     'author_email' => 'xavier@causal.ch',
     'CGLcompliance' => '',
     'CGLcompliance_note' => '',
-    'constraints' => array(
-        'depends' => array(
+    'constraints' => [
+        'depends' => [
             'typo3' => '6.2.0-8.99.99',
             'php' => '5.5.0-7.0.99',
-        ),
-        'conflicts' => array(),
-        'suggests' => array(),
-    ),
+        ],
+        'conflicts' => [],
+        'suggests' => [],
+    ],
     '_md5_values_when_last_written' => '',
-);
+];

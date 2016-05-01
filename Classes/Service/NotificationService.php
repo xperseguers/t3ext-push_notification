@@ -94,11 +94,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             }
         }
 
-        // GCM lets us send a message to multiple devices at once
-        $title = 'LionsBase';
-        $subtitle = 'Reminder';
-        $tickerText = 'Bla bla bla';
-        $count += $this->notifyGCM($googleDeviceTokens, $message, $title, $subtitle, $tickerText, $sound, $sound);
+        if (!empty($googleDeviceTokens)) {
+            // GCM lets us send a message to multiple devices at once
+            $title = '';
+            $subtitle = '';
+            $tickerText = '';
+            $count += $this->notifyGCM($googleDeviceTokens, $message, $title, $subtitle, $tickerText, $sound, $sound);
+        }
 
         return $count;
     }
@@ -308,13 +310,48 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
 
         // Execute the request
-        $result = curl_exec($ch);
+        $data = curl_exec($ch);
 
         // Close the connection to the server
         curl_close($ch);
 
-        // TODO: Check result!
-        return (bool)$result ? count($deviceTokens) : 0;
+        $data = json_decode($data, true);
+        if (!is_array($data)) {
+            return 0;
+        }
+
+        if ($data['failure'] > 0) {
+            for ($i = 0; $i < count($data['results']); $i++) {
+                $result = $data['results'][$i];
+                if (!isset($result['error'])) {
+                    continue;
+                }
+                switch ($result['error']) {
+                    case 'NotRegistered':
+                        $this->unregisterDevice($deviceTokens[$i]);
+                        break;
+                }
+            }
+        }
+
+        return $data['success'];
+    }
+
+    /**
+     * Unregisters a device since the token is known to be outdated/invalid.
+     *
+     * @param string $token
+     * @return void
+     */
+    protected function unregisterDevice($token)
+    {
+        $database = $this->getDatabaseConnection();
+        $table = 'tx_pushnotification_tokens';
+
+        $database->exec_DELETEquery(
+            $table,
+            'token=' . $database->fullQuoteStr($token, $table)
+        );
     }
 
     /**
