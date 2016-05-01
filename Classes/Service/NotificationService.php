@@ -35,14 +35,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     private $extKey = 'push_notification';
 
     /**
-     * @var string
+     * @var bool
      */
-    protected $largeIcon = '';
-
-    /**
-     * @var string
-     */
-    protected $smallIcon = '';
+    protected $isProduction = true;
 
     /**
      * Returns a singleton of this class.
@@ -61,17 +56,34 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     }
 
     /**
+     * @return bool
+     */
+    public function getIsProduction()
+    {
+        return $this->isProduction;
+    }
+
+    /**
+     * @param bool $isProduction
+     * @return void
+     */
+    public function setIsProduction($isProduction)
+    {
+        $this->isProduction = $isProduction;
+    }
+
+    /**
      * Notifies a given user on all their registered devices.
      *
      * @param int $notificationId
      * @param int $userId
      * @param string $message
-     * @param string $sound
+     * @param bool $sound
      * @param int $badge
-     * @param bool $production
+     * @param array $extra
      * @return int Number of notification sent (-1 if no notification needed)
      */
-    public function notify ($notificationId, $userId, $message, $sound = 'default', $badge = 0, $production = true)
+    public function notify($notificationId, $userId, $title, $message, $sound = true, $badge = 0, array $extra = [])
     {
         $rows = $this->getDatabaseConnection()->exec_SELECTgetRows('token', 'tx_pushnotification_tokens', 'user_id=' . (int)$userId);
         if (empty($rows)) {
@@ -87,7 +99,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             $token = str_replace(' ', '', $row['token']);
             if (strlen($token) === 64) {
                 // iOS
-                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $production);
+                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true);
             } else {
                 // Android
                 $googleDeviceTokens[] = $token;
@@ -96,57 +108,87 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
         if (!empty($googleDeviceTokens)) {
             // GCM lets us send a message to multiple devices at once
-            $title = '';
-            $subtitle = '';
-            $tickerText = '';
-            $count += $this->notifyGCM($googleDeviceTokens, $message, $title, $subtitle, $tickerText, $sound, $sound);
+            $count += $this->notifyGCM($googleDeviceTokens, $title, $message, $sound, $extra);
         }
 
         return $count;
     }
 
     /**
-     * Returns the large icon (GCM).
+     * Sends a notification using GCM.
      *
-     * @return string
+     * @param array|string $deviceTokens
+     * @param string $title
+     * @param string $message
+     * @param bool $notify
+     * @return int Number of notification sent
+     * @throws InvalidGatewayException
+     * @throws InvalidApiKeyException
      */
-    public function getLargeIcon()
+    protected function notifyGCM($deviceTokens, $title, $message, $notify, array $extra)
     {
-        return $this->largeIcon;
-    }
+        $gateway = 'https://android.googleapis.com/gcm/send';
 
-    /**
-     * Sets the large icon (GCM).
-     *
-     * @param string $largeIcon
-     * @return $this
-     */
-    public function setLargeIcon($largeIcon)
-    {
-        $this->largeIcon = $largeIcon;
-        return $this;
-    }
+        if (!is_array($deviceTokens)) {
+            $deviceTokens = [$deviceTokens];
+        }
 
-    /**
-     * Returns the small icon (GCM).
-     *
-     * @return string
-     */
-    public function getSmallIcon()
-    {
-        return $this->smallIcon;
-    }
+        $apiAccessKey = $this->getGCMAccessKey();
+        if (strlen($apiAccessKey) < 8) {
+            throw new InvalidApiKeyException();
+        }
 
-    /**
-     * Sets the small icon (GCM).
-     *
-     * @param string $smallIcon
-     * @return $this
-     */
-    public function setSmallIcon($smallIcon)
-    {
-        $this->smallIcon = $smallIcon;
-        return $this;
+        $payload = json_encode([
+            'registration_ids' => $deviceTokens,
+            'data' => array_merge(
+                $extra,
+                [
+                    'title' => $title,
+                    'message' => $message,
+                    'notify' => $notify ? 1 : 0,
+                ]
+            )
+        ]);
+
+        $headers = [
+            'Authorization: key=' . $apiAccessKey,
+            'Content-Type: application/json',
+        ];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $gateway);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+
+        // Execute the request
+        $data = curl_exec($ch);
+
+        // Close the connection to the server
+        curl_close($ch);
+
+        $data = json_decode($data, true);
+        if (!is_array($data)) {
+            return 0;
+        }
+
+        if ($data['failure'] > 0) {
+            for ($i = 0; $i < count($data['results']); $i++) {
+                $result = $data['results'][$i];
+                if (!isset($result['error'])) {
+                    continue;
+                }
+                switch ($result['error']) {
+                    case 'NotRegistered':
+                        $this->unregisterDevice($deviceTokens[$i]);
+                        break;
+                }
+            }
+        }
+
+        return $data['success'];
     }
 
     /**
@@ -155,15 +197,14 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @param int $notificationId
      * @param string $deviceToken
      * @param string $message
-     * @param string $sound
-     * @param string $badge
+     * @param bool $sound
+     * @param int $badge
      * @param bool $immediate
-     * @param bool $production
      * @return int Nunber of notification sent (1 if success, otherwise 0)
      * @throws InvalidCertificateException
      * @throws InvalidGatewayException
      */
-    protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate, $production) {
+    protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate) {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
             throw new InvalidCertificateException();
@@ -174,7 +215,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $payload = json_encode([
             'aps' => [
                 'alert' => $message,
-                'sound' => $sound,
+                'sound' => $sound ? 'default' : '',
                 'badge' => $badge,
             ]
         ]);
@@ -223,7 +264,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             . $inner;
 
 
-        if ($production) {
+        if ($this->isProduction) {
             $gateway = 'ssl://gateway.push.apple.com:2195';
         } else {
             $gateway = 'ssl://gateway.sandbox.push.apple.com:2195';
@@ -253,88 +294,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         fclose($fp);
 
         return (bool)$result ? 1 : 0;
-    }
-
-    /**
-     * Sends a notification using GCM.
-     *
-     * @param array|string $deviceTokens
-     * @param string $message
-     * @param string $title
-     * @param string $subtitle
-     * @param string $tickerText
-     * @param bool $sound
-     * @param bool $vibrate
-     * @return int Number of notification sent
-     * @throws InvalidGatewayException
-     * @throws InvalidApiKeyException
-     */
-    protected function notifyGCM($deviceTokens, $message, $title, $subtitle, $tickerText, $sound, $vibrate)
-    {
-        if (!is_array($deviceTokens)) {
-            $deviceTokens = [$deviceTokens];
-        }
-
-        $apiAccessKey = $this->getGCMAccessKey();
-        if (strlen($apiAccessKey) < 8) {
-            throw new InvalidApiKeyException();
-        }
-
-        $gateway = 'https://android.googleapis.com/gcm/send';
-
-        $payload = json_encode([
-            'registration_ids' => $deviceTokens,
-            'data' => [
-                'message' => $message,
-                'title' => $title,
-                'subtitle' => $subtitle,
-                'tickerText' => $tickerText,
-                'vibrate' => $vibrate ? 1 : 0,
-                'sound' => $sound ? 1 : 0,
-                'largeIcon' => $this->largeIcon,
-                'smallIcon' => $this->smallIcon,
-            ]
-        ]);
-
-        $headers = [
-            'Authorization: key=' . $apiAccessKey,
-            'Content-Type: application/json',
-        ];
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $gateway);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-
-        // Execute the request
-        $data = curl_exec($ch);
-
-        // Close the connection to the server
-        curl_close($ch);
-
-        $data = json_decode($data, true);
-        if (!is_array($data)) {
-            return 0;
-        }
-
-        if ($data['failure'] > 0) {
-            for ($i = 0; $i < count($data['results']); $i++) {
-                $result = $data['results'][$i];
-                if (!isset($result['error'])) {
-                    continue;
-                }
-                switch ($result['error']) {
-                    case 'NotRegistered':
-                        $this->unregisterDevice($deviceTokens[$i]);
-                        break;
-                }
-            }
-        }
-
-        return $data['success'];
     }
 
     /**
