@@ -43,6 +43,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * Returns a singleton of this class.
      *
      * @return NotificationService
+     * @api
      */
     public static function getInstance()
     {
@@ -57,6 +58,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
     /**
      * @return bool
+     * @api
      */
     public function getIsProduction()
     {
@@ -66,6 +68,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     /**
      * @param bool $isProduction
      * @return void
+     * @api
      */
     public function setIsProduction($isProduction)
     {
