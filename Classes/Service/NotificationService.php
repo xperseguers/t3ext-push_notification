@@ -73,6 +73,103 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     }
 
     /**
+     * Registers a device.
+     *
+     * @param string $token Straight token string as fetched from the mobile device
+     * @param int $userId Your own internal user identifier to be used when notifying her/him
+     * @return void
+     * @api
+     */
+    public function registerDevice($token, $userId)
+    {
+        $this->registerDevices([[$token, $userId]]);
+    }
+
+    /**
+     * Registers a set of devices.
+     *
+     * @param array $tokenUserIds Array of tuplets from token (position 0) and userId (position 1)
+     * @return void
+     * @api
+     */
+    public function registerDevices(array $tokenUserIds)
+    {
+        $database = $this->getDatabaseConnection();
+        $table = 'tx_pushnotification_tokens';
+
+        foreach ($tokenUserIds as $tokenUserId) {
+            $query = $database->INSERTquery(
+                $table,
+                [
+                    'token' => trim($tokenUserId[0]),
+                    'user_id' => (int)$tokenUserId[1],
+                ]
+            );
+            $query = 'REPLACE ' . substr($query, 7);
+            $database->sql_query($query);
+        }
+    }
+
+    /**
+     * Unregisters a device.
+     *
+     * @param string $token
+     * @return void
+     * @api
+     */
+    protected function unregisterDevice($token)
+    {
+        $this->unregisterDevices([$token]);
+    }
+
+    /**
+     * Unregisters multiple devices.
+     *
+     * @param array $tokens
+     * @return void
+     * @api
+     */
+    public function unregisterDevices(array $tokens)
+    {
+        $database = $this->getDatabaseConnection();
+        $table = 'tx_pushnotification_tokens';
+
+        $conditions = [];
+        foreach ($tokens as $token) {
+            $conditions[] = 'token=' . $database->fullQuoteStr($token, $table);
+            $conditions[] = 'token=' . $database->fullQuoteStr(chunk_split(str_replace(' ', '', $data), 8, ' '), $table);
+        }
+
+        $database->exec_DELETEquery(
+            $table,
+            implode(' OR ', $conditions)
+        );
+    }
+
+    /**
+     * Returns the device tokens registered for a given user.
+     *
+     * @param int $userId
+     * @return array
+     * @api
+     */
+    public function getTokens($userId)
+    {
+        $rows = $this->getDatabaseConnection()->exec_SELECTgetRows(
+            'token',
+            'tx_pushnotification_tokens',
+            'user_id=' . (int)$userId,
+            '',
+            '',
+            '',
+            'token'
+        );
+        $tokens = !empty($rows) ? array_keys($rows) : [];
+
+        return $tokens;
+    }
+
+    /**
      * Notifies a given user on all their registered devices.
      *
      * @param int $notificationId
@@ -182,6 +279,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
                 }
                 switch ($result['error']) {
                     case 'NotRegistered':
+                        // Unregister the device since the token is known to be outdated/invalid
                         $this->unregisterDevice($deviceTokens[$i]);
                         break;
                 }
@@ -296,21 +394,52 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         return (bool)$result ? 1 : 0;
     }
 
-    /**
-     * Unregisters a device since the token is known to be outdated/invalid.
-     *
-     * @param string $token
-     * @return void
-     */
-    protected function unregisterDevice($token)
+    protected function processFeedbackiOS()
     {
-        $database = $this->getDatabaseConnection();
-        $table = 'tx_pushnotification_tokens';
+        $certificate = $this->getiOSCertificateFileName();
+        if (empty($certificate) || !is_readable($certificate)) {
+            throw new InvalidCertificateException();
+        }
 
-        $database->exec_DELETEquery(
-            $table,
-            'token=' . $database->fullQuoteStr($token, $table)
-        );
+        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
+
+        if ($this->isProduction) {
+            $gateway = 'ssl://feedback.push.apple.com:2196';
+        } else {
+            $gateway = 'ssl://feedback.sandbox.push.apple.com:2196';
+        }
+
+        // Create a stream
+        $ctx = stream_context_create();
+        stream_context_set_option($ctx, 'ssl', 'local_cert', $certificate);
+        if (!empty($certificatePassPhrase)) {
+            stream_context_set_option($ctx, 'ssl', 'passphrase', $certificatePassPhrase);
+        }
+
+        // Open a connection to the APNS feedback server
+        $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT, $ctx);
+        if (!$fp) {
+            // Fail to connect
+            throw new InvalidGatewayException($gateway);
+        }
+
+        $feedbackTokens = [];
+        while (!feof($fp)) {
+            $data = fread($fp, 38);
+            if (strlen($data)) {
+                $feedbackTokens[] = unpack("N1timestamp/n1length/H*devtoken", $data);
+            }
+        }
+
+        // Close the connection to the server
+        fclose($fp);
+
+        // Unregisters the devices
+        $tokens = [];
+        foreach ($feedbackTokens as $token) {
+            $tokens[] = $token['devtoken'];
+        }
+        $this->unregisterDevices($tokens);
     }
 
     /**
