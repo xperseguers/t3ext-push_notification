@@ -1,7 +1,7 @@
 Push Notification Service for iOS and Android
 =============================================
 
-This extension provides an API to send notifications to iOS and Android devices:
+This TYPO3 extension provides an API to send notifications to iOS and Android devices:
 
 - iOS devices are notified using Apple Push Notification Service (APNS);
 - Android devices are notified using Google Cloud Messaging (GCM).
