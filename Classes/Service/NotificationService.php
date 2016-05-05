@@ -141,6 +141,10 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         foreach ($tokens as $token) {
             $conditions[] = 'token=' . $database->fullQuoteStr($token, $table);
             $conditions[] = 'token=' . $database->fullQuoteStr(chunk_split(str_replace(' ', '', $data), 8, ' '), $table);
+
+            static::getLogger()->debug('Unregister device', [
+                'token' => $token,
+            ]);
         }
 
         $database->exec_DELETEquery(
@@ -191,6 +195,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             return -1;
         }
 
+        static::getLogger()->debug('Notifying user', [
+            'user' => $userId,
+            'notification' => $notificationId,
+            'title' => $title,
+            'message' => $message,
+        ]);
+
         $count = 0;
         $googleDeviceTokens = [];
 
@@ -235,6 +246,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
         $apiAccessKey = $this->getGCMAccessKey();
         if (strlen($apiAccessKey) < 8) {
+            static::getLogger()->error('Invalid GCM API key');
             throw new InvalidApiKeyException();
         }
 
@@ -271,6 +283,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
         $data = json_decode($data, true);
         if (!is_array($data)) {
+            static::getLogger()->error('Payload is not JSON', [
+                'payload' => $data,
+            ]);
             return 0;
         }
 
@@ -308,6 +323,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate) {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
+            static::getLogger()->error('Invalid certificate', [
+                'certificate' => $certificate,
+            ]);
             throw new InvalidCertificateException();
         }
 
@@ -382,6 +400,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
         if (!$fp) {
             // Fail to connect
+            static::getLogger()->error('Invalid gateway', [
+                'gateway' => $gateway,
+            ]);
             throw new InvalidGatewayException($gateway);
         }
 
@@ -389,12 +410,32 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         stream_set_blocking($fp, 0);
 
         // Send it to the server
-        $result = fwrite($fp, $notification, strlen($notification));
+        fwrite($fp, $notification, strlen($notification));
+
+        // Workaround to check if there were any errors during the last seconds of sending
+        usleep(500000); // Pause for half a second
+
+        // byte1=always 8, byte2=StatusCode, bytes3,4,5,6=identifier(notificationId)
+        // Should return nothing if OK
+        $appleErrorResponse = fread($fp, 6);
+        $response = null;
+        if ($appleErrorResponse) {
+            // Unpack the error response (first byte "command" should always be 8)
+            $response = unpack('Ccommand/Cstatus_code/Nidentifier', $appleErrorResponse);
+        }
+
+        static::getLogger()->debug('Notification for iOS', [
+            'notification' => $notificationId,
+            'token' => $deviceToken,
+            'production' => $this->isProduction,
+            'message' => $message,
+            'response' => $response,
+        ]);
 
         // Close the connection to the server
         fclose($fp);
 
-        return (bool)$result ? 1 : 0;
+        return $response === null ? 1 : 0;
     }
 
     protected function processFeedbackiOS()
@@ -503,6 +544,21 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     protected function getDatabaseConnection()
     {
         return $GLOBALS['TYPO3_DB'];
+    }
+
+    /**
+     * Returns a logger.
+     *
+     * @return \TYPO3\CMS\Core\Log\Logger
+     */
+    protected static function getLogger()
+    {
+        /** @var \TYPO3\CMS\Core\Log\Logger $logger */
+        static $logger = null;
+        if ($logger === null) {
+            $logger = GeneralUtility::makeInstance(\TYPO3\CMS\Core\Log\LogManager::class)->getLogger(__CLASS__);
+        }
+        return $logger;
     }
 
 }
