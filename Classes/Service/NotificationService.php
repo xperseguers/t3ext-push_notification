@@ -438,7 +438,14 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         return $response === null ? 1 : 0;
     }
 
-    protected function processFeedbackiOS()
+    /**
+     * Processes the feedback from APNS (iOS).
+     *
+     * @throws InvalidCertificateException
+     * @throws InvalidGatewayException
+     * @return void
+     */
+    public function processFeedbackiOS()
     {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
