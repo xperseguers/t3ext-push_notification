@@ -211,6 +211,15 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             if (strlen($token) === 64) {
                 // iOS
                 $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true);
+                // According to https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/APNsProviderAPI.html:
+                //
+                // Keep your connections with APNs open across multiple notifications; don’t repeatedly open and close connections.
+                // APNs treats rapid connection and disconnection as a denial-of-service attack. You should leave a connection open
+                // unless you know it will be idle for an extended period of time—for example, if you only send notifications to
+                // your users once a day it is ok to use a new connection each day.
+                //
+                // Since we currently do not support grouped notification using the same stream, try to avoid the DoS:
+                sleep(10);
             } else {
                 // Android
                 $googleDeviceTokens[] = $token;
