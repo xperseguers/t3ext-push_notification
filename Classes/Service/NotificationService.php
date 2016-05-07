@@ -134,6 +134,10 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      */
     public function unregisterDevices(array $tokens)
     {
+        if (empty($tokens)) {
+            return;
+        }
+
         $database = $this->getDatabaseConnection();
         $table = 'tx_pushnotification_tokens';
 
