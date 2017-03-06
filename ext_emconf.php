@@ -9,7 +9,7 @@ $EM_CONF[$_EXTKEY] = [
     'description' => 'Service to let extension developer send notifications to iOS and Android devices.',
     'category' => 'services',
     'shy' => 0,
-    'version' => '1.0.0-dev',
+    'version' => '1.1.0-dev',
     'priority' => '',
     'loadOrder' => '',
     'module' => '',
@@ -26,7 +26,7 @@ $EM_CONF[$_EXTKEY] = [
     'constraints' => [
         'depends' => [
             'typo3' => '6.2.0-8.99.99',
-            'php' => '5.5.0-7.0.99',
+            'php' => '5.5.0-7.1.99',
         ],
         'conflicts' => [],
         'suggests' => [],

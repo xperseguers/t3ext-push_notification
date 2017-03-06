@@ -106,6 +106,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
                 [
                     'token' => trim($tokenUserId[0]),
                     'user_id' => (int)$tokenUserId[1],
+                    'tstamp' => $GLOBALS['EXEC_TIME'],
                 ]
             );
             $query = 'REPLACE ' . substr($query, 7);
