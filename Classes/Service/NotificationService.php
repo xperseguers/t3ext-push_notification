@@ -252,7 +252,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      */
     protected function notifyGCM($deviceTokens, $title, $message, $notify, array $extra)
     {
-        $gateway = 'https://android.googleapis.com/gcm/send';
+        $gateway = 'https://fcm.googleapis.com/fcm/send';
 
         if (!is_array($deviceTokens)) {
             $deviceTokens = [$deviceTokens];
