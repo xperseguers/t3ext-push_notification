@@ -17,6 +17,7 @@ namespace Causal\PushNotification\Service;
 use Causal\PushNotification\Exception\InvalidApiKeyException;
 use Causal\PushNotification\Exception\InvalidCertificateException;
 use Causal\PushNotification\Exception\InvalidGatewayException;
+use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -97,20 +98,21 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      */
     public function registerDevices(array $tokenUserIds)
     {
-        $database = $this->getDatabaseConnection();
         $table = 'tx_pushnotification_tokens';
 
         foreach ($tokenUserIds as $tokenUserId) {
-            $query = $database->INSERTquery(
-                $table,
-                [
-                    'token' => trim($tokenUserId[0]),
-                    'user_id' => (int)$tokenUserId[1],
-                    'tstamp' => $GLOBALS['EXEC_TIME'],
-                ]
-            );
+            $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
+                ->getQueryBuilderForTable($table);
+            $query = $queryBuilder
+                ->insert($table)
+                ->set('token', trim($tokenUserId[0]), false)
+                ->set('user_id', (int)$tokenUserId[1], false)
+                ->set('tstamp', $GLOBALS['EXEC_TIME'], false)
+                ->getSQL();
             $query = 'REPLACE ' . substr($query, 7);
-            $database->sql_query($query);
+            GeneralUtility::makeInstance(ConnectionPool::class)
+                ->getConnectionForTable($table)
+                ->query($query);
         }
     }
 
@@ -130,7 +132,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * Unregisters multiple devices.
      *
      * @param array $tokens
-     * @return void
      * @api
      */
     public function unregisterDevices(array $tokens)
@@ -139,23 +140,25 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             return;
         }
 
-        $database = $this->getDatabaseConnection();
         $table = 'tx_pushnotification_tokens';
+        $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
+            ->getQueryBuilderForTable($table);
 
         $conditions = [];
         foreach ($tokens as $token) {
-            $conditions[] = 'token=' . $database->fullQuoteStr($token, $table);
-            $conditions[] = 'token=' . $database->fullQuoteStr(chunk_split(str_replace(' ', '', $data), 8, ' '), $table);
+            $conditions[] = $queryBuilder->expr()->eq('token', $queryBuilder->createNamedParameter($token, \PDO::PARAM_STR));
+            $sanitizedToken = chunk_split(str_replace(' ', '', $token), 8, ' ');
+            $conditions[] = $queryBuilder->expr()->eq('token', $queryBuilder->createNamedParameter($sanitizedToken, \PDO::PARAM_STR));
 
             static::getLogger()->debug('Unregister device', [
                 'token' => $token,
             ]);
         }
 
-        $database->exec_DELETEquery(
-            $table,
-            implode(' OR ', $conditions)
-        );
+        $queryBuilder
+            ->delete($table)
+            ->where($queryBuilder->expr()->orX(... $conditions))
+            ->execute();
     }
 
     /**
@@ -165,18 +168,22 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @return array
      * @api
      */
-    public function getTokens($userId)
+    public function getTokens(int $userId)
     {
-        $rows = $this->getDatabaseConnection()->exec_SELECTgetRows(
-            'token',
-            'tx_pushnotification_tokens',
-            'user_id=' . (int)$userId,
-            '',
-            '',
-            '',
-            'token'
-        );
-        $tokens = !empty($rows) ? array_keys($rows) : [];
+        $rows = GeneralUtility::makeInstance(ConnectionPool::class)
+            ->getConnectionForTable('tx_pushnotification_tokens')
+            ->select(
+                ['token'],
+                'tx_pushnotification_tokens',
+                [
+                    'user_id' => $userId,
+                ]
+            )
+            ->fetchAll();
+        $tokens = [];
+        foreach ($rows as $row) {
+            $tokens[] = $row['token'];
+        }
 
         return $tokens;
     }
@@ -186,16 +193,17 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @param int $notificationId
      * @param int $userId
+     * @param string $title
      * @param string $message
      * @param bool $sound
      * @param int $badge
      * @param array $extra
      * @return int Number of notification sent (-1 if no notification needed)
      */
-    public function notify($notificationId, $userId, $title, $message, $sound = true, $badge = 0, array $extra = [])
+    public function notify(int $notificationId, int $userId, string $title, string $message, bool $sound = true, int $badge = 0, array $extra = []): int
     {
-        $rows = $this->getDatabaseConnection()->exec_SELECTgetRows('token', 'tx_pushnotification_tokens', 'user_id=' . (int)$userId);
-        if (empty($rows)) {
+        $tokens = $this->getTokens($userId);
+        if (empty($tokens)) {
             // No need to notify
             return -1;
         }
@@ -210,9 +218,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $count = 0;
         $googleDeviceTokens = [];
 
-        foreach ($rows as $row) {
+        foreach ($tokens as $token) {
             // Normalize the token
-            $token = str_replace(' ', '', $row['token']);
+            $token = str_replace(' ', '', $token);
             if (strlen($token) === 64) {
                 // iOS
                 $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true);
@@ -250,7 +258,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @throws InvalidGatewayException
      * @throws InvalidApiKeyException
      */
-    protected function notifyGCM($deviceTokens, $title, $message, $notify, array $extra)
+    protected function notifyGCM($deviceTokens, string $title, string $message, bool $notify, array $extra): int
     {
         $gateway = 'https://fcm.googleapis.com/fcm/send';
 
@@ -334,7 +342,8 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @throws InvalidCertificateException
      * @throws InvalidGatewayException
      */
-    protected function notifyiOS($notificationId, $deviceToken, $message, $sound, $badge, $immediate) {
+    protected function notifyiOS(int $notificationId, string $deviceToken, string $message, bool $sound, int $badge, bool $immediate): int
+    {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
             static::getLogger()->error('Invalid certificate', [
@@ -457,7 +466,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @throws InvalidCertificateException
      * @throws InvalidGatewayException
-     * @return void
      */
     public function processFeedbackiOS()
     {
@@ -512,7 +520,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @return string|null
      */
-    protected function getiOSCertificateFileName()
+    protected function getiOSCertificateFileName(): ?string
     {
         $settings = $this->getSettings();
         return isset($settings['iOS_certificate']) ? $settings['iOS_certificate'] : null;
@@ -523,7 +531,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @return string|null
      */
-    protected function getiOSCertificatePassPhrase()
+    protected function getiOSCertificatePassPhrase(): ?string
     {
         $settings = $this->getSettings();
         return isset($settings['iOS_certificate_passphrase']) ? $settings['iOS_certificate_passphrase'] : null;
@@ -534,7 +542,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @return string|null
      */
-    protected function getGCMAccessKey()
+    protected function getGCMAccessKey(): ?string
     {
         $settings = $this->getSettings();
         return isset($settings['gcm_access_key']) ? $settings['gcm_access_key'] : null;
@@ -545,7 +553,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @return array
      */
-    protected function getSettings()
+    protected function getSettings(): array
     {
         static $settings = null;
 
@@ -557,14 +565,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
 
         return $settings;
-    }
-
-    /**
-     * @return \TYPO3\CMS\Core\Database\DatabaseConnection
-     */
-    protected function getDatabaseConnection()
-    {
-        return $GLOBALS['TYPO3_DB'];
     }
 
     /**
