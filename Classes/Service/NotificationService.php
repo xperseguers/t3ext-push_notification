@@ -17,6 +17,7 @@ namespace Causal\PushNotification\Service;
 use Causal\PushNotification\Exception\InvalidApiKeyException;
 use Causal\PushNotification\Exception\InvalidCertificateException;
 use Causal\PushNotification\Exception\InvalidGatewayException;
+use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -558,13 +559,18 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         static $settings = null;
 
         if ($settings === null) {
-            $settings = unserialize($GLOBALS['TYPO3_CONF_VARS']['EXT']['extConf'][$this->extKey]);
-            if (!is_array($settings)) {
-                $settings = [];
+            $typo3Branch = class_exists(\TYPO3\CMS\Core\Information\Typo3Version::class)
+                ? (new \TYPO3\CMS\Core\Information\Typo3Version())->getBranch()
+                : TYPO3_branch;
+            if ((bool)version_compare($typo3Branch, '9.5', '<')) {
+                $settings = $GLOBALS['TYPO3_CONF_VARS']['EXT']['extConf'][$this->extKey] ?? '';
+                $settings = unserialize($settings, false) ?: [];
+            } else {
+                $settings = GeneralUtility::makeInstance(ExtensionConfiguration::class)->get($this->extKey);
             }
         }
 
-        return $settings;
+        return $settings ?? [];
     }
 
     /**

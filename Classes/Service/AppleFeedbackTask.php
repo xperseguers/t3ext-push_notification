@@ -56,7 +56,7 @@ class AppleFeedbackTask extends \TYPO3\CMS\Scheduler\Task\AbstractTask
     {
         $notificationService = \Causal\PushNotification\Service\NotificationService::getInstance();
 
-        $isProduction = strpos(GeneralUtility::getIndpEnv('TYPO3_HOST_ONLY'), 'local.') === false;
+        $isProduction = strpos(GeneralUtility::getIndpEnv('TYPO3_HOST_ONLY'), '.local') === false;
         $notificationService->setIsProduction($isProduction);
 
         // Actual processing
