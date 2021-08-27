@@ -25,15 +25,12 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * Notification service.
  *
  * @category    Service
- * @package     TYPO3
- * @subpackage  tx_pushnotification
  * @author      Xavier Perseguers <xavier@causal.ch>
  * @copyright   Causal Sàrl
  * @license     http://www.gnu.org/copyleft/gpl.html
  */
 class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 {
-
     private $extKey = 'push_notification';
 
     /**
@@ -69,7 +66,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
     /**
      * @param bool $isProduction
-     * @return void
      * @api
      */
     public function setIsProduction($isProduction)
@@ -82,7 +78,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @param string $token Straight token string as fetched from the mobile device
      * @param int $userId Your own internal user identifier to be used when notifying her/him
-     * @return void
      * @api
      */
     public function registerDevice($token, $userId)
@@ -94,7 +89,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * Registers a set of devices.
      *
      * @param array $tokenUserIds Array of tuplets from token (position 0) and userId (position 1)
-     * @return void
      * @api
      */
     public function registerDevices(array $tokenUserIds)
@@ -121,7 +115,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * Unregisters a device.
      *
      * @param string $token
-     * @return void
      * @api
      */
     protected function unregisterDevice($token)
@@ -406,7 +399,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             // Frame
             . $inner;
 
-
         if ($this->isProduction) {
             $gateway = 'ssl://gateway.push.apple.com:2195';
         } else {
@@ -501,7 +493,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         while (!feof($fp)) {
             $data = fread($fp, 38);
             if (strlen($data)) {
-                $feedbackTokens[] = unpack("N1timestamp/n1length/H*devtoken", $data);
+                $feedbackTokens[] = unpack('N1timestamp/n1length/H*devtoken', $data);
             }
         }
 
@@ -587,5 +579,4 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
         return $logger;
     }
-
 }

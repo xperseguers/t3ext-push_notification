@@ -20,8 +20,6 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * This class provides a purge outdated iOS device tokens.
  *
  * @category    Service
- * @package     TYPO3
- * @subpackage  tx_pushnotification
  * @author      Xavier Perseguers <xavier@causal.ch>
  * @copyright   Causal Sàrl
  * @license     http://www.gnu.org/copyleft/gpl.html
@@ -31,7 +29,7 @@ class AppleFeedbackTask extends \TYPO3\CMS\Scheduler\Task\AbstractTask
     /**
      * Method executed from the Scheduler.
      *
-     * @return boolean
+     * @return bool
      */
     public function execute()
     {
@@ -64,5 +62,4 @@ class AppleFeedbackTask extends \TYPO3\CMS\Scheduler\Task\AbstractTask
 
         return true;
     }
-
 }

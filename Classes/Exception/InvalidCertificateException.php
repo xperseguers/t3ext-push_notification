@@ -18,8 +18,6 @@ namespace Causal\PushNotification\Exception;
  * Exception for invalid certificate (empty or not readable).
  *
  * @category    Exception
- * @package     TYPO3
- * @subpackage  tx_pushnotification
  * @author      Xavier Perseguers <xavier@causal.ch>
  * @copyright   Causal Sàrl
  * @license     http://www.gnu.org/copyleft/gpl.html
@@ -34,7 +32,7 @@ class InvalidCertificateException extends \Exception
 
     /**
      * InvalidCertificateException constructor.
-     
+
      * @param string $message
      */
     public function __construct($message = null)
@@ -44,5 +42,4 @@ class InvalidCertificateException extends \Exception
         }
         parent::__construct($message, 1461613078);
     }
-    
 }

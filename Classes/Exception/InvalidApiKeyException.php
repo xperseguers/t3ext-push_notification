@@ -18,8 +18,6 @@ namespace Causal\PushNotification\Exception;
  * Exception for invalid API key for GCM.
  *
  * @category    Exception
- * @package     TYPO3
- * @subpackage  tx_pushnotification
  * @author      Xavier Perseguers <xavier@causal.ch>
  * @copyright   Causal Sàrl
  * @license     http://www.gnu.org/copyleft/gpl.html
@@ -34,7 +32,7 @@ class InvalidApiKeyException extends \Exception
 
     /**
      * InvalidApiKeyException constructor.
-     
+
      * @param string $message
      */
     public function __construct($message = null)
@@ -44,5 +42,4 @@ class InvalidApiKeyException extends \Exception
         }
         parent::__construct($message, 1461654230);
     }
-    
 }
