@@ -103,7 +103,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
                 continue;
             }
 
-            $mode = ($tokenUserIds[2] ?? 'D') === 'D' ? 'D' : 'P';
+            $mode = ($tokenUserIds[2] ?? 'P') === 'D' ? 'D' : 'P';
             $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
                 ->getQueryBuilderForTable($table);
             $query = $queryBuilder
