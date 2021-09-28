@@ -58,7 +58,8 @@ We now need to convert the public and private keys for use with this extension.
    (.pem)". Suggested name is `newfile.crt.pem`.
 3. Select the private key and choose Export from the context menu.
 4. Choose an export password. This password will be the one to configure in
-   `ext_conf_template.txt` for `iOS_certificate_passphrase`.
+   `ext_conf_template.txt` for `iOS_certificate_production_passphrase` or
+   `iOS_certificate_development_passphrase`.
 5. Convert the private certificate from `.p12` to `.pem` format using:
 
    ```bash

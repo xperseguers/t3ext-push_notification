@@ -14,6 +14,7 @@
 
 namespace Causal\PushNotification\Service;
 
+use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -55,11 +56,27 @@ class AppleFeedbackTask extends \TYPO3\CMS\Scheduler\Task\AbstractTask
         $notificationService = NotificationService::getInstance();
         $notificationService->removeStaleTokens();  // works for all tokens
 
-        $isProduction = strpos(GeneralUtility::getIndpEnv('TYPO3_HOST_ONLY'), '.local') === false;
-        $notificationService->setIsProduction($isProduction);
-
         // Actual processing
-        $notificationService->processFeedbackiOS();
+        $isProduction = strpos(GeneralUtility::getIndpEnv('TYPO3_HOST_ONLY'), '.local') === false;
+        if ($isProduction) {
+            // Never do that on a development machine
+            $notificationService->processFeedbackiOS();
+        }
+
+        // If we have development tokens, process them as well
+        if (
+            GeneralUtility::makeInstance(ConnectionPool::class)
+                ->getConnectionForTable('tx_pushnotification_tokens')
+                ->count(
+                    '*',
+                    'tx_pushnotification_tokens',
+                    [
+                        'mode' => 'D',
+                    ]
+                ) > 0
+        ) {
+            $notificationService->processFeedbackiOS(false);
+        }
 
         return true;
     }

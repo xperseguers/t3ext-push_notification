@@ -34,11 +34,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     private $extKey = 'push_notification';
 
     /**
-     * @var bool
-     */
-    protected $isProduction = true;
-
-    /**
      * Returns a singleton of this class.
      *
      * @return NotificationService
@@ -53,24 +48,6 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
 
         return $instance;
-    }
-
-    /**
-     * @return bool
-     * @api
-     */
-    public function getIsProduction()
-    {
-        return $this->isProduction;
-    }
-
-    /**
-     * @param bool $isProduction
-     * @api
-     */
-    public function setIsProduction($isProduction)
-    {
-        $this->isProduction = $isProduction;
     }
 
     /**
@@ -197,7 +174,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $rows = GeneralUtility::makeInstance(ConnectionPool::class)
             ->getConnectionForTable('tx_pushnotification_tokens')
             ->select(
-                ['token'],
+                ['token', 'mode'],
                 'tx_pushnotification_tokens',
                 [
                     'user_id' => $userId,
@@ -206,7 +183,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             ->fetchAll();
         $tokens = [];
         foreach ($rows as $row) {
-            $tokens[] = $row['token'];
+            $tokens[] = $row;
         }
 
         return $tokens;
@@ -242,12 +219,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $count = 0;
         $googleDeviceTokens = [];
 
-        foreach ($tokens as $token) {
+        foreach ($tokens as $tokenData) {
             // Normalize the token
-            $token = str_replace(' ', '', $token);
+            $token = str_replace(' ', '', $tokenData['token']);
+            $productionToken = $tokenData['mode'] !== 'D';
             if (strlen($token) === 64) {
                 // iOS
-                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true);
+                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $productionToken);
                 // According to https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/APNsProviderAPI.html:
                 //
                 // Keep your connections with APNs open across multiple notifications; don’t repeatedly open and close connections.
@@ -362,11 +340,20 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @param bool $sound
      * @param int $badge
      * @param bool $immediate
+     * @param int $isProductionToken
      * @return int Nunber of notification sent (1 if success, otherwise 0)
      * @throws InvalidCertificateException
      * @throws InvalidGatewayException
      */
-    protected function notifyiOS(int $notificationId, string $deviceToken, string $message, bool $sound, int $badge, bool $immediate): int
+    protected function notifyiOS(
+        int $notificationId,
+        string $deviceToken,
+        string $message,
+        bool $sound,
+        int $badge,
+        bool $immediate,
+        bool $isProductionToken = true
+    ): int
     {
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
@@ -376,7 +363,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             throw new InvalidCertificateException();
         }
 
-        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
+        $certificatePassPhrase = $this->getiOSCertificatePassPhrase($isProductionToken);
 
         $payload = json_encode([
             'aps' => [
@@ -429,9 +416,11 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             // Frame
             . $inner;
 
-        if ($this->isProduction) {
+        if ($isProductionToken) {
+            // Production
             $gateway = 'ssl://gateway.push.apple.com:2195';
         } else {
+            // Sandbox/Development
             $gateway = 'ssl://gateway.sandbox.push.apple.com:2195';
         }
 
@@ -473,7 +462,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         static::getLogger()->debug('Notification for iOS', [
             'notification' => $notificationId,
             'token' => $deviceToken,
-            'production' => $this->isProduction,
+            'production' => $isProductionToken,
             'message' => $message,
             'response' => $response,
         ]);
@@ -490,16 +479,16 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @throws InvalidCertificateException
      * @throws InvalidGatewayException
      */
-    public function processFeedbackiOS()
+    public function processFeedbackiOS(bool $production = true): void
     {
-        $certificate = $this->getiOSCertificateFileName();
+        $certificate = $this->getiOSCertificateFileName($production);
         if (empty($certificate) || !is_readable($certificate)) {
             throw new InvalidCertificateException();
         }
 
-        $certificatePassPhrase = $this->getiOSCertificatePassPhrase();
+        $certificatePassPhrase = $this->getiOSCertificatePassPhrase($production);
 
-        if ($this->isProduction) {
+        if ($production) {
             $gateway = 'ssl://feedback.push.apple.com:2196';
         } else {
             $gateway = 'ssl://feedback.sandbox.push.apple.com:2196';
@@ -541,23 +530,27 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     /**
      * Returns the name of the .pem certificate (containing private + public keys) to use.
      *
+     * @param bool $production
      * @return string|null
      */
-    protected function getiOSCertificateFileName(): ?string
+    protected function getiOSCertificateFileName(bool $production = true): ?string
     {
         $settings = $this->getSettings();
-        return isset($settings['iOS_certificate']) ? $settings['iOS_certificate'] : null;
+        $key = 'iOS_certificate_' . ($production ? 'production' : 'development');
+        return $settings[$key] ?? null;
     }
 
     /**
      * Returns the pass phrase to use to open the certificate.
      *
+     * @param bool $production
      * @return string|null
      */
-    protected function getiOSCertificatePassPhrase(): ?string
+    protected function getiOSCertificatePassPhrase(bool $production = true): ?string
     {
         $settings = $this->getSettings();
-        return isset($settings['iOS_certificate_passphrase']) ? $settings['iOS_certificate_passphrase'] : null;
+        $key = 'iOS_certificate_' . ($production ? 'production' : 'development') . '_passphrase';
+        return $settings[$key] ?? null;
     }
 
     /**

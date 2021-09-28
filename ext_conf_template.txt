@@ -1,7 +1,12 @@
-# cat=basic/file/1; type=file[pem]; label=Apple Push Notification Service Certificate: Absolute path to the certificate file.
-iOS_certificate =
-# cat=basic/file/2; type=string; label=Certificate Pass Phrase: Pass phrase to load the certificate.
-iOS_certificate_passphrase =
+# cat=basic/file/1; type=file[pem]; label=Apple Push Notification Service Production Certificate: Absolute path to the certificate file.
+iOS_certificate_production =
+# cat=basic/file/2; type=string; label=Certificate Pass Phrase (Production): Pass phrase to load the certificate.
+iOS_certificate_production_passphrase =
+
+# cat=basic/file/3; type=file[pem]; label=Apple Push Notification Service Development Certificate: Absolute path to the certificate file.
+iOS_certificate_development =
+# cat=basic/file/4; type=string; label=Certificate Pass Phrase (Development): Pass phrase to load the certificate.
+iOS_certificate_development_passphrase =
 
 # cat=basic//; type=string; label=GCM API key: API key to send notifications using GCM.
 gcm_access_key =
