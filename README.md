@@ -54,24 +54,20 @@ We now need to convert the public and private keys for use with this extension.
 
 1. In Keychain Access, locate your certificate.
 2. Select the certificate "Apple Push Services: your-app" and choose Export from
-   the context menu. Be sure to choose file format "Privacy Enhanced Mail
-   (.pem)". Suggested name is `newfile.crt.pem`.
-3. Select the private key and choose Export from the context menu.
-4. Choose an export password. This password will be the one to configure in
+   the context menu. Be sure to choose file format ".p12". Suggested name is
+   `newfile.p12`.
+3. Choose an export password. This password will be the one to configure in
    `ext_conf_template.txt` for `iOS_certificate_production_passphrase` or
    `iOS_certificate_development_passphrase`.
-5. Convert the private certificate from `.p12` to `.pem` format using:
+4. Convert the certificate from `.p12` to `.pem` format using:
 
    ```bash
-   openssl pkcs12 -in path.p12 -out newfile.key.pem -nocerts -nodes
+   FILE=newfile
+   openssl pkcs12 -in $FILE.p12 -nokeys -nodes | openssl x509 -out $FILE.crt.pem
+   openssl pkcs12 -in $FILE.p12 -nocerts -nodes | openssl pkcs8 -nocrypt -out $FILE.key.pem
+   cat $FILE.crt.pem $FILE.key.pem > $FILE.pem
    ```
 
-6. Now combine both certificate a private key using:
-
-   ```bash
-   cat newfile.crt.pem > newfile.pem
-   grep --a 200 "PRIVATE KEY" newfile.key.pem >> newfile.pem
-   ```
 
 ### Useful commands
 
