@@ -156,6 +156,25 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     }
 
     /**
+     * Drops stale tokens (older than 3 months)
+     *
+     * @api
+     */
+    public function removeStaleTokens(): void
+    {
+        $table = 'tx_pushnotification_tokens';
+        $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
+            ->getQueryBuilderForTable($table);
+
+        $queryBuilder
+            ->delete($table)
+            ->where(
+                $queryBuilder->expr()->lt('tstamp', strtotime('-3 months'))
+            )
+            ->execute();
+    }
+
+    /**
      * Returns the device tokens registered for a given user.
      *
      * @param int $userId

@@ -52,7 +52,8 @@ class AppleFeedbackTask extends \TYPO3\CMS\Scheduler\Task\AbstractTask
      */
     protected function purgeOutdatedTokens()
     {
-        $notificationService = \Causal\PushNotification\Service\NotificationService::getInstance();
+        $notificationService = NotificationService::getInstance();
+        $notificationService->removeStaleTokens();  // works for all tokens
 
         $isProduction = strpos(GeneralUtility::getIndpEnv('TYPO3_HOST_ONLY'), '.local') === false;
         $notificationService->setIsProduction($isProduction);
