@@ -78,11 +78,12 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @param string $token Straight token string as fetched from the mobile device
      * @param int $userId Your own internal user identifier to be used when notifying her/him
+     * @param string $mode Either 'P' for production or 'D' for development
      * @api
      */
-    public function registerDevice($token, $userId)
+    public function registerDevice(string $token, int $userId, string $mode = 'P')
     {
-        $this->registerDevices([[$token, $userId]]);
+        $this->registerDevices([[$token, $userId, $mode]]);
     }
 
     /**
