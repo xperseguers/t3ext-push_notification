@@ -117,7 +117,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      * @param string $token
      * @api
      */
-    protected function unregisterDevice($token)
+    public function unregisterDevice($token)
     {
         $this->unregisterDevices([$token]);
     }
