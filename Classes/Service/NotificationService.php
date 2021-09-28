@@ -88,7 +88,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
     /**
      * Registers a set of devices.
      *
-     * @param array $tokenUserIds Array of tuplets from token (position 0) and userId (position 1)
+     * @param array $tokenUserIds Array of tuplets from token (position 0) and userId (position 1), possibly mode (position 2 where 'P' is production and 'D' development)
      * @api
      */
     public function registerDevices(array $tokenUserIds)
@@ -96,12 +96,14 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $table = 'tx_pushnotification_tokens';
 
         foreach ($tokenUserIds as $tokenUserId) {
+            $mode = ($tokenUserIds[2] ?? 'D') === 'D' ? 'D' : 'P';
             $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
                 ->getQueryBuilderForTable($table);
             $query = $queryBuilder
                 ->insert($table)
                 ->setValue('token', $queryBuilder->quote(trim($tokenUserId[0])), false)
                 ->setValue('user_id', (int)$tokenUserId[1], false)
+                ->setValue('mode', $queryBuilder->quote($mode), false)
                 ->setValue('tstamp', $GLOBALS['EXEC_TIME'], false)
                 ->getSQL();
             $query = 'REPLACE ' . substr($query, 7);
