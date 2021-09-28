@@ -103,14 +103,15 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
                 // This token is incomplete and cannot be "extracted" anyway
                 continue;
             }
+            $userId = (int)$tokenUserId[1];
+            $mode = ($tokenUserId[2] ?? 'P') === 'D' ? 'D' : 'P';
 
-            $mode = ($tokenUserIds[2] ?? 'P') === 'D' ? 'D' : 'P';
             $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
                 ->getQueryBuilderForTable($table);
             $query = $queryBuilder
                 ->insert($table)
                 ->setValue('token', $queryBuilder->quote($token), false)
-                ->setValue('user_id', (int)$tokenUserId[1], false)
+                ->setValue('user_id', $userId, false)
                 ->setValue('mode', $queryBuilder->quote($mode), false)
                 ->setValue('tstamp', $GLOBALS['EXEC_TIME'], false)
                 ->getSQL();
