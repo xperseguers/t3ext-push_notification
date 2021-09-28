@@ -96,12 +96,19 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         $table = 'tx_pushnotification_tokens';
 
         foreach ($tokenUserIds as $tokenUserId) {
+            $token = trim($tokenUserId[0]);
+            if (strpos($token, '{length = 32, bytes = ') === 0) {
+                // Broken format since iOS 13 without fix in mobile application
+                // This token is incomplete and cannot be "extracted" anyway
+                continue;
+            }
+
             $mode = ($tokenUserIds[2] ?? 'D') === 'D' ? 'D' : 'P';
             $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
                 ->getQueryBuilderForTable($table);
             $query = $queryBuilder
                 ->insert($table)
-                ->setValue('token', $queryBuilder->quote(trim($tokenUserId[0])), false)
+                ->setValue('token', $queryBuilder->quote($token), false)
                 ->setValue('user_id', (int)$tokenUserId[1], false)
                 ->setValue('mode', $queryBuilder->quote($mode), false)
                 ->setValue('tstamp', $GLOBALS['EXEC_TIME'], false)
