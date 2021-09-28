@@ -100,9 +100,9 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
                 ->getQueryBuilderForTable($table);
             $query = $queryBuilder
                 ->insert($table)
-                ->set('token', trim($tokenUserId[0]), false)
-                ->set('user_id', (int)$tokenUserId[1], false)
-                ->set('tstamp', $GLOBALS['EXEC_TIME'], false)
+                ->setValue('token', $queryBuilder->quote(trim($tokenUserId[0])), false)
+                ->setValue('user_id', (int)$tokenUserId[1], false)
+                ->setValue('tstamp', $GLOBALS['EXEC_TIME'], false)
                 ->getSQL();
             $query = 'REPLACE ' . substr($query, 7);
             GeneralUtility::makeInstance(ConnectionPool::class)
