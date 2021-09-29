@@ -16,6 +16,7 @@ namespace Causal\PushNotification\Service;
 
 use Causal\PushNotification\Exception\InvalidApiKeyException;
 use Causal\PushNotification\Exception\InvalidCertificateException;
+use Causal\PushNotification\Exception\InvalidCertificatePassphraseException;
 use Causal\PushNotification\Exception\InvalidGatewayException;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Database\ConnectionPool;
@@ -225,7 +226,7 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             $productionToken = $tokenData['mode'] !== 'D';
             if (strlen($token) === 64) {
                 // iOS
-                $count += $this->notifyiOS($notificationId, $token, $message, $sound, $badge, true, $productionToken);
+                $count += $this->notifyiOS($notificationId, $token, $title, $message, $sound, $badge, true, $productionToken);
                 // According to https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/APNsProviderAPI.html:
                 //
                 // Keep your connections with APNs open across multiple notifications; don’t repeatedly open and close connections.
@@ -336,18 +337,21 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
      *
      * @param int $notificationId
      * @param string $deviceToken
+     * @param string $title
      * @param string $message
      * @param bool $sound
      * @param int $badge
      * @param bool $immediate
      * @param int $isProductionToken
-     * @return int Nunber of notification sent (1 if success, otherwise 0)
+     * @return int Number of notification sent (1 if success, otherwise 0)
      * @throws InvalidCertificateException
+     * @throws InvalidCertificatePassphraseException
      * @throws InvalidGatewayException
      */
     protected function notifyiOS(
         int $notificationId,
         string $deviceToken,
+        string $title,
         string $message,
         bool $sound,
         int $badge,
@@ -355,6 +359,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         bool $isProductionToken = true
     ): int
     {
+        $version = curl_version();
+        if ($version['features'] & constant('CURL_VERSION_HTTP2') === 0) {
+            // No support for HTTP/2, cannot continue
+            static::getLogger()->warning('cURL does not support HTTP/2, cannot notify Apple devices');
+            return 0;
+        }
+
         $certificate = $this->getiOSCertificateFileName();
         if (empty($certificate) || !is_readable($certificate)) {
             static::getLogger()->error('Invalid certificate', [
@@ -367,97 +378,70 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
 
         $payload = json_encode([
             'aps' => [
-                'alert' => $message,
+                'alert' => [
+                    'title' => $title,
+                    'body' => $message,
+                ],
                 'sound' => $sound ? 'default' : '',
                 'badge' => $badge,
             ]
         ]);
 
-        $inner = ''
-            // Id of 1
-            . chr(1)
-            // Length is always 32 bytes
-            . pack('n', 32)
-            // Hex string of the deviceToken
-            . pack('H*', $deviceToken)
+        $x509 = openssl_x509_read('file://' . $certificate);
+        if ($x509 === false) {
+            throw new InvalidCertificateException();
+        }
+        $x509Data = openssl_x509_parse($x509);
 
-            // Id of 2
-            . chr(2)
-            // Length of the payload
-            . pack('n', strlen($payload))
-            . $payload
+        $httpHeaders = [
+            'apns-topic: ' . $x509Data['subject']['UID'],
+        ];
 
-            // Id of 3
-            . chr(3)
-            // Length of integer is 4
-            . pack('n', 4)
-            // Pack notifier to length of 4
-            . pack('N', $notificationId)
+        // TODO: possibly adapt to use a .p8 file
+        // See: https://dev.to/samauto/connect-to-apns-via-http-2-with-php-57oj
+        $bearerAuthentication = false;
+        if ($bearerAuthentication) {
+            $key = openssl_pkey_get_private('file://' . $certificate, $certificatePassPhrase);
+            if ($key === false) {
+                throw new InvalidCertificatePassphraseException();
+            }
 
-            // Id of 4
-            . chr(4)
-            // Length of integer is 4
-            . pack('n', 4)
-            // Set expiration to 1 day from now
-            . pack('N', time() + 86400)
+            $keyId = strtoupper($x509Data['hash']);
+            $teamId = $x509Data['subject']['OU'];
 
-            // Id of 5
-            . chr(5)
-            // Length is 1
-            . pack('n', 1)
-            // Send immediately (10 = immediately, 5 = at a time that conserves the power on the device)
-            . chr($immediate ? 10 : 5);
+            // See https://jwt.io/
+            $header = ['alg' => 'ES256', 'kid' => $keyId];
+            $claims = ['iss' => $teamId, 'iat' => time()];
 
-        $notification = ''
-            // Id of 2
-            . chr(2)
-            // Length of the frame
-            . pack('N', strlen($inner))
-            // Frame
-            . $inner;
+            $header_encoded = static::base64UrlEncode(json_encode($header));
+            $claims_encoded = static::base64UrlEncode(json_encode($claims));
+
+            $signature = '';
+            openssl_sign($header_encoded . '.' . $claims_encoded, $signature, $key, 'sha256');
+            $jwt = $header_encoded . '.' . $claims_encoded . '.' . static::base64UrlEncode($signature);
+
+            $httpHeaders[] = 'Authorization: Bearer ' . $jwt;
+        }
 
         if ($isProductionToken) {
             // Production
-            $gateway = 'ssl://gateway.push.apple.com:2195';
+            $gateway = 'https://api.push.apple.com/';
         } else {
             // Sandbox/Development
-            $gateway = 'ssl://gateway.sandbox.push.apple.com:2195';
+            $gateway = 'https://api.sandbox.push.apple.com/';
         }
 
-        // Create a stream
-        $ctx = stream_context_create();
-        stream_context_set_option($ctx, 'ssl', 'local_cert', $certificate);
-        if (!empty($certificatePassPhrase)) {
-            stream_context_set_option($ctx, 'ssl', 'passphrase', $certificatePassPhrase);
+        $ch = curl_init($gateway . '3/device/' . $deviceToken);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $httpHeaders);
+        if (!$bearerAuthentication) {
+            curl_setopt($ch, CURLOPT_SSLCERT, $certificate);
+            curl_setopt($ch, CURLOPT_SSLCERTPASSWD, $certificatePassPhrase);
         }
-
-        // Open a connection to the APNS server
-        $fp = stream_socket_client($gateway, $err, $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
-        if (!$fp) {
-            // Fail to connect
-            static::getLogger()->error('Invalid gateway', [
-                'gateway' => $gateway,
-            ]);
-            throw new InvalidGatewayException($gateway);
-        }
-
-        // Ensure that blocking is disabled
-        stream_set_blocking($fp, 0);
-
-        // Send it to the server
-        fwrite($fp, $notification, strlen($notification));
-
-        // Workaround to check if there were any errors during the last seconds of sending
-        usleep(500000); // Pause for half a second
-
-        // byte1=always 8, byte2=StatusCode, bytes3,4,5,6=identifier(notificationId)
-        // Should return nothing if OK
-        $appleErrorResponse = fread($fp, 6);
-        $response = null;
-        if ($appleErrorResponse) {
-            // Unpack the error response (first byte "command" should always be 8)
-            $response = unpack('Ccommand/Cstatus_code/Nidentifier', $appleErrorResponse);
-        }
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
         static::getLogger()->debug('Notification for iOS', [
             'notification' => $notificationId,
@@ -465,12 +449,13 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
             'production' => $isProductionToken,
             'message' => $message,
             'response' => $response,
+            'httpCode' => $httpCode,
         ]);
 
         // Close the connection to the server
-        fclose($fp);
+        curl_close($ch);
 
-        return $response === null ? 1 : 0;
+        return $httpCode === 200 ? 1 : 0;
     }
 
     /**
@@ -602,4 +587,11 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         }
         return $logger;
     }
+
+    protected static function base64UrlEncode(string $data): string
+    {
+        $base64Url = strtr(base64_encode($data), '+/', '-_');
+        return rtrim($base64Url, '=');
+    }
+
 }
