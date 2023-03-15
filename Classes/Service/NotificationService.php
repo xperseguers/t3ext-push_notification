@@ -468,8 +468,8 @@ class NotificationService implements \TYPO3\CMS\Core\SingletonInterface
         // Close the connection to the server
         curl_close($ch);
 
-        if ($httpCode === 400) {
-            // BadDeviceToken
+        if ($httpCode === 410) {
+            // The device token is no longer active for the topic
             $this->unregisterDevice($deviceToken, $isProductionToken);
         }
 
