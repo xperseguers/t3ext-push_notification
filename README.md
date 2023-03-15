@@ -35,51 +35,10 @@ $message = 'This is my first notification, enjoy!';
 $notificationService->notify($notificationId, $userId, $title, $message);
 ```
 
-## Generate a certificate for Apple devices
+## Generate a key for Apple devices
 
-Create a certificate signing request as explained on
-https://help.apple.com/developer-account/#/devbfa00fef7
+Go to https://developer.apple.com/account/resources/authkeys/list and  click the
+"+" link next to "Keys":
 
-Now go to https://developer.apple.com/account/resources/certificates/list and
-click the "+" link next to "Certificates":
-
-1. Tick the radio button Services > Apple Push Notification service SSL (Sandbox
-   & Production).
-2. On the next screen, select your application in the dropdown list.
-3. Choose your Certificate Signing Request
-4. Download the certificate and double-click to import it (select "login" as
-   target keychain).
-
-We now need to convert the public and private keys for use with this extension.
-
-1. In Keychain Access, locate your certificate.
-2. Select the certificate "Apple Push Services: your-app" and choose Export from
-   the context menu. Be sure to choose file format ".p12". Suggested name is
-   `newfile.p12`.
-3. Choose an export password. This password will be the one to configure in
-   `ext_conf_template.txt` for `iOS_certificate_production_passphrase` or
-   `iOS_certificate_development_passphrase`.
-4. Convert the certificate from `.p12` to `.pem` format using:
-
-   ```bash
-   FILE=newfile
-   openssl pkcs12 -in $FILE.p12 -nokeys -nodes | openssl x509 -out $FILE.crt.pem
-   openssl pkcs12 -in $FILE.p12 -nocerts -nodes | openssl pkcs8 -nocrypt -out $FILE.key.pem
-   cat $FILE.crt.pem $FILE.key.pem > $FILE.pem
-   ```
-
-
-### Useful commands
-
-Check the validity of the certificate:
-
-```bash
-openssl x509 -in newfile.pem -noout -text
-```
-
-Check you have both the correct public and private keys in the certificate:
-
-```bash
-openssl x509 -noout -modulus -in newfile.pem | openssl md5
-openssl rsa -noout -modulus -in newfile.pem | openssl md5
-```
+1. Tick the checkbox for Apple Push Notifications service (APNs).
+2. Complete the process until you can download the .p8 file.

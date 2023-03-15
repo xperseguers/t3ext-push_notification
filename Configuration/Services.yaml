@@ -1,0 +1,12 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  Causal\PushNotification\Command\AppleFeedback:
+    tags:
+      - name: 'console.command'
+        command: 'pushnotification:purgeiOSTokens'
+        schedulable: true
+        description: 'Purge outdated iOS device tokens'

@@ -1,12 +1,14 @@
-# cat=basic/file/1; type=file[pem]; label=Apple Push Notification Service Production Certificate: Absolute path to the certificate file.
-iOS_certificate_production =
-# cat=basic/file/2; type=string; label=Certificate Pass Phrase (Production): Pass phrase to load the certificate.
-iOS_certificate_production_passphrase =
+# cat=basic/file/1; type=file[p8]; label=Apple Push Notification Service Key: Absolute path to the .p8 key file
+iOS_p8_certificate =
 
-# cat=basic/file/3; type=file[pem]; label=Apple Push Notification Service Development Certificate: Absolute path to the certificate file.
-iOS_certificate_development =
-# cat=basic/file/4; type=string; label=Certificate Pass Phrase (Development): Pass phrase to load the certificate.
-iOS_certificate_development_passphrase =
+# cat=basic//; type=string; label=Key ID: The "Key ID" that is provided when you generate a new key
+iOS_key_id =
 
-# cat=basic//; type=string; label=GCM API key: API key to send notifications using GCM.
+# cat=basic//; type=string; label=Team ID: From the Membership section of the iOS developer website
+iOS_team_id =
+
+# cat=basic//; type=string; label=The Bundle ID of the app you want to send the notification to
+iOS_bundle_id =
+
+# cat=basic//; type=string; label=GCM API key: API key to send notifications using GCM
 gcm_access_key =
