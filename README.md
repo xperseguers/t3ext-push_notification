@@ -1,6 +1,12 @@
 Push Notification Service for iOS and Android
 =============================================
 
+**BEWARE:** This extension is not maintained anymore. You are advised to use
+those two composer packages instead:
+
+- `edamov/pushok`
+- `edwinhoksberg/php-fcm`
+
 This TYPO3 extension provides an API to send notifications to iOS and Android
 devices:
 
